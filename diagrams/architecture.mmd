@@ -1,0 +1,16 @@
+%% Music Recommender - simple architecture
+%% green = AI step | orange = human | purple = automated check
+flowchart TD
+    User([User types a request]):::human --> Retrieve["Find songs<br/>Last.fm API"]:::app
+    Retrieve --> Generate["Write recommendation<br/>+ reasons (local AI)"]:::ai
+    Generate --> Check{"Check: only uses<br/>real found songs?"}:::test
+    Check -->|no| Generate
+    Check -->|yes| Show["Show picks<br/>+ confidence"]:::app
+    Show --> Review([User accepts<br/>or refines]):::human
+
+    Tests["Automated tests<br/>(pytest)"]:::test -.checks.-> Check
+
+    classDef app fill:#dbeafe,stroke:#1e40af,color:#1e3a8a;
+    classDef ai fill:#dcfce7,stroke:#166534,color:#14532d;
+    classDef human fill:#ffedd5,stroke:#c2410c,color:#7c2d12;
+    classDef test fill:#ede9fe,stroke:#6d28d9,color:#4c1d95;
