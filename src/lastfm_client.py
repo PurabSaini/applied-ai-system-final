@@ -139,6 +139,13 @@ def get_tag_top_tracks(tag: str, limit: int = 20) -> List[dict]:
     return songs
 
 
+def get_artist_top_track(artist: str) -> Optional[str]:
+    """Return an artist's most popular track name, to use as a similarity seed."""
+    data = _call("artist.getTopTracks", artist=artist, limit=1, autocorrect=1)
+    tracks = _as_list(data.get("toptracks", {}).get("track"))
+    return tracks[0].get("name") if tracks else None
+
+
 def get_top_tags(artist: str, track: str) -> List[tuple]:
     """Top tags for one track, as [(name, weight), ...]."""
     data = _call("track.getTopTags", artist=artist, track=track, autocorrect=1)
