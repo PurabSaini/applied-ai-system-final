@@ -1,125 +1,137 @@
-import csv
-from typing import List, Dict, Tuple, Optional
-from dataclasses import dataclass
+"""Ranking logic for the music recommender.
+
+Reworked for the Last.fm RAG pipeline. The old version scored songs on numeric
+audio features (energy, valence, acousticness...) from a local CSV. Last.fm
+doesn't provide those, so scoring now uses Last.fm-native signals:
+
+    score = W_TAGS * tag_overlap      # how well the song's tags match the ask
+          + W_MATCH * similarity      # Last.fm's own similar-track match score
+          + W_POP  * popularity_fit   # mainstream vs niche preference
+
+The score->sort->top-k shape of recommend_songs() is unchanged from the
+original; only the per-song signals differ. score_song() also returns a list
+of human-readable reasons, which the RAG layer feeds to the LLM as grounding.
+"""
+import math
+from dataclasses import dataclass, field
+from typing import List, Optional, Tuple
+
+# Signal weights (relative importance). Tags matter most, then similarity to a
+# named seed, then the popularity preference.
+W_TAGS = 3.0
+W_MATCH = 2.0
+W_POP = 1.0
+
+# Listener count (log10) treated as "fully popular". ~10M listeners -> 1.0.
+_POP_LOG_CEIL = 7.0
+
+
+@dataclass
+class QueryIntent:
+    """Structured form of a user's free-text request (produced by the LLM)."""
+    desired_tags: List[str] = field(default_factory=list)
+    seed_artist: Optional[str] = None
+    popularity_pref: str = "any"  # "mainstream" | "niche" | "any"
+
 
 @dataclass
 class Song:
-    """
-    Represents a song and its attributes.
-    Required by tests/test_recommender.py
-    """
-    id: int
+    """A candidate track, normalized from a Last.fm response."""
     title: str
     artist: str
-    genre: str
-    mood: str
-    energy: float
-    tempo_bpm: float
-    valence: float
-    danceability: float
-    acousticness: float
+    tags: List[Tuple[str, int]] = field(default_factory=list)  # (name, weight)
+    listeners: int = 0
+    playcount: int = 0
+    match: Optional[float] = None  # similarity score, only from get_similar
+    url: str = ""
 
-@dataclass
-class UserProfile:
+    @classmethod
+    def from_dict(cls, d: dict) -> "Song":
+        """Build a Song from the dict shape produced by lastfm_client."""
+        return cls(
+            title=d.get("title", ""),
+            artist=d.get("artist", ""),
+            tags=list(d.get("tags", []) or []),
+            listeners=int(d.get("listeners", 0) or 0),
+            playcount=int(d.get("playcount", 0) or 0),
+            match=d.get("match"),
+            url=d.get("url", ""),
+        )
+
+    @property
+    def tag_map(self) -> dict:
+        """Lowercased tag name -> weight, for matching."""
+        return {name.lower(): weight for name, weight in self.tags}
+
+
+def _popularity_norm(listeners: int) -> float:
+    """Map a listener count onto [0, 1] on a log scale (big ranges compress)."""
+    if listeners <= 0:
+        return 0.0
+    return min(1.0, math.log10(listeners + 1) / _POP_LOG_CEIL)
+
+
+def score_song(intent: QueryIntent, song: Song) -> Tuple[float, List[str]]:
+    """Score one song against the intent. Returns (score, reasons).
+
+    Each signal contributes a sub-score in [0, 1] scaled by its weight, mirroring
+    the weighted-judge design of the original CSV recommender.
     """
-    Represents a user's taste preferences.
-    Required by tests/test_recommender.py
-    """
-    favorite_genre: str
-    favorite_mood: str
-    target_energy: float
-    likes_acoustic: bool
-
-class Recommender:
-    """
-    OOP implementation of the recommendation logic.
-    Required by tests/test_recommender.py
-    """
-    def __init__(self, songs: List[Song]):
-        self.songs = songs
-
-    def recommend(self, user: UserProfile, k: int = 5) -> List[Song]:
-        # TODO: Implement recommendation logic
-        return self.songs[:k]
-
-    def explain_recommendation(self, user: UserProfile, song: Song) -> str:
-        # TODO: Implement explanation logic
-        return "Explanation placeholder"
-
-def load_songs(csv_path: str) -> List[Dict]:
-    """Load songs from a CSV file into a list of dicts."""
-    songs: List[Dict] = []
-    with open(csv_path, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            songs.append({
-                "id": int(row["id"]),
-                "title": row["title"],
-                "artist": row["artist"],
-                "genre": row["genre"],
-                "mood": row["mood"],
-                "energy": float(row["energy"]),
-                "tempo_bpm": float(row["tempo_bpm"]),
-                "valence": float(row["valence"]),
-                "danceability": float(row["danceability"]),
-                "acousticness": float(row["acousticness"]),
-            })
-    return songs
-
-def score_song(user_prefs: Dict, song: Dict) -> Tuple[float, List[str]]:
-    """Score one song against user preferences, returning (score, reasons)."""
-    # Weighted "judge" algorithm from the README. Each feature returns a
-    # sub-score in [0, 1] that is multiplied by its weight; the weights are the
-    # only thing that decides how important each feature is. Max score = 7.5.
-    #
-    #   score = 3.0*genre + 2.0*mood + 1.5*energy + 1.0*acoustic
-    #
-    # user_prefs keys: genre, mood, energy, likes_acoustic (acoustic optional).
     score = 0.0
     reasons: List[str] = []
 
-    # genre: exact match, weight 3.0
-    fav_genre = user_prefs.get("genre")
-    if fav_genre is not None:
-        genre_sub = 1.0 if song["genre"] == fav_genre else 0.0
-        score += 3.0 * genre_sub
-        if genre_sub:
-            reasons.append(f"matches your favorite genre ({fav_genre})")
+    # --- Tag overlap (weight W_TAGS) ---
+    # Fraction of desired tags the song carries, each weighted by how strongly
+    # Last.fm associates that tag with the track (count is 0-100).
+    desired = [t.lower() for t in intent.desired_tags if t.strip()]
+    if desired:
+        tag_map = song.tag_map
+        matched = [t for t in desired if t in tag_map]
+        if matched:
+            confidence = sum(min(1.0, (tag_map[t] or 0) / 100.0) or 0.2 for t in matched)
+            tag_sub = min(1.0, confidence / len(desired))
+            score += W_TAGS * tag_sub
+            reasons.append("tagged " + ", ".join(matched))
 
-    # mood: exact match, weight 2.0
-    fav_mood = user_prefs.get("mood")
-    if fav_mood is not None:
-        mood_sub = 1.0 if song["mood"] == fav_mood else 0.0
-        score += 2.0 * mood_sub
-        if mood_sub:
-            reasons.append(f"matches your favorite mood ({fav_mood})")
+    # --- Similarity match (weight W_MATCH) ---
+    # Only counts when the user actually named a seed to be "similar to".
+    # (In the pipeline, match scores only exist for get_similar results, but
+    # guarding on seed_artist keeps scoring correct for mixed candidate lists.)
+    if song.match is not None and intent.seed_artist:
+        match_sub = max(0.0, min(1.0, float(song.match)))
+        score += W_MATCH * match_sub
+        if match_sub >= 0.3:
+            seed = f" to {intent.seed_artist}" if intent.seed_artist else ""
+            reasons.append(f"similar{seed} (match {match_sub:.2f})")
 
-    # energy: closeness, weight 1.5
-    target_energy = user_prefs.get("energy")
-    if target_energy is not None:
-        energy_sub = max(0.0, 1.0 - abs(song["energy"] - target_energy))
-        score += 1.5 * energy_sub
-        if energy_sub >= 0.8:
-            reasons.append(f"energy ({song['energy']:.2f}) is close to your target")
-
-    # acousticness: directional, weight 1.0
-    likes_acoustic = user_prefs.get("likes_acoustic")
-    if likes_acoustic is not None:
-        acoustic_sub = song["acousticness"] if likes_acoustic else 1.0 - song["acousticness"]
-        score += 1.0 * acoustic_sub
-        if acoustic_sub >= 0.7:
-            reasons.append("acoustic" if likes_acoustic else "not too acoustic")
+    # --- Popularity fit (weight W_POP) ---
+    pop_norm = _popularity_norm(song.listeners)
+    pref = (intent.popularity_pref or "any").lower()
+    if pref == "mainstream":
+        score += W_POP * pop_norm
+        if pop_norm >= 0.7:
+            reasons.append("a popular, widely-loved pick")
+    elif pref == "niche":
+        niche = 1.0 - pop_norm
+        score += W_POP * niche
+        if niche >= 0.7 and song.listeners > 0:
+            reasons.append("more of a deep cut")
+    # "any" -> popularity does not affect the score
 
     return score, reasons
 
-def recommend_songs(user_prefs: Dict, songs: List[Dict], k: int = 5) -> List[Tuple[Dict, float, str]]:
-    """Return the k highest-scoring songs as (song, score, explanation) tuples."""
-    # Score every song, then keep the k highest. Each item is
-    # (song_dict, score, explanation).
+
+def recommend_songs(
+    intent: QueryIntent, songs: List[Song], k: int = 5
+) -> List[Tuple[Song, float, List[str]]]:
+    """Score every song, then return the k highest as (song, score, reasons).
+
+    Same score->sort->top-k structure as the original recommend_songs().
+    """
     scored = [
-        (song, score, ", ".join(reasons) if reasons else "no strong matches")
+        (song, score, reasons)
         for song in songs
-        for score, reasons in [score_song(user_prefs, song)]
+        for score, reasons in [score_song(intent, song)]
     ]
     scored.sort(key=lambda item: item[1], reverse=True)
     return scored[:k]
