@@ -1,0 +1,87 @@
+﻿======================================================================
+INPUT:  'something like Bon Iver, chill and acoustic'
+======================================================================
+Parsed intent -> tags=['chill', 'acoustic'] seed='Bon Iver' popularity=any
+
+Here are some chill, acoustic tracks that capture the atmospheric folk vibe of Bon Iver.
+  1. Flume - Bon Iver
+     why: Straight from Bon Iver's debut, this track showcases their signature chill, stripped-down acoustic sound.
+  2. The Wolves (Act I and II) - Bon Iver
+     why: Another quintessential Bon Iver piece delivering an atmospheric and intimate acoustic experience.
+  3. Big Black Car - Gregory Alan Isakov
+     why: Tagged with acoustic, folk, and indie folk, this song delivers a gentle, introspective tone perfect for fans of Bon Iver.
+  4. Amsterdam - Gregory Alan Isakov
+     why: Tagged with acoustic, folk, and beautiful, it offers a soothing and mellow arrangement.
+
+  Retrieved candidates (8) [grounding source]:
+    - Flume - Bon Iver  [no tags]
+    - The Wolves (Act I and II) - Bon Iver  [no tags]
+    - Big Black Car - Gregory Alan Isakov  [folk, acoustic, indie, singer-songwriter, indie folk]
+    - Stubborn Love - The Lumineers  [folk, indie, indie folk, acoustic, folk rock]
+    - Amsterdam - Gregory Alan Isakov  [indie, acoustic, waltz, folk, beautiful]
+    - Heartbeats - José González  [no tags]
+    - Old Pine - Ben Howard  [no tags]
+    - First Day of My Life - Bright Eyes  [no tags]
+
+======================================================================
+INPUT:  'upbeat pop for a workout, mainstream is fine'
+======================================================================
+Parsed intent -> tags=['upbeat', 'pop', 'workout'] seed=None popularity=mainstream
+
+Here are some high-energy, mainstream pop tracks from your options to keep your workout moving.
+  1. Hey, Soul Sister - Train
+     why: With its upbeat, pop, and happy tags alongside massive popularity, this track brings cheerful, high-tempo energy to any workout.
+  2. Pocketful of Sunshine - Natasha Bedingfield
+     why: Tagged as both pop and upbeat, this mainstream hit provides an optimistic, driving rhythm perfect for staying active.
+  3. Locked Out of Heaven - Bruno Mars
+     why: A hugely popular pop and R&B anthem with a propulsive tempo that fits right into a workout playlist.
+  4. I Bet My Life - Imagine Dragons
+     why: Tagged as upbeat, this mainstream pop-rock track offers an anthemic, energetic feel ideal for keeping your momentum up.
+
+  Retrieved candidates (8) [grounding source]:
+    - I Bet My Life - Imagine Dragons  [upbeat]
+    - Daylight - Matt & Kim  [upbeat]
+    - Oh My Darling Don't Cry - Run the Jewels  [upbeat]
+    - Hey, Soul Sister - Train  [pop, rock, happy, upbeat, train]
+    - Pocketful of Sunshine - Natasha Bedingfield  [pop, female vocalists, Natasha Bedingfield, upbeat, 2008]
+    - Locked Out of Heaven - Bruno Mars  [pop, rnb, Bruno Mars, 10s, 2012]
+    - The One That Got Away - Katy Perry  [pop, katy perry, female vocalists, Love, relax]
+    - Freaks - Surf Curse  [surf rock, indie, loud, upbeat, Lo-Fi]
+
+======================================================================
+INPUT:  'moody indie rock for a rainy night'
+======================================================================
+Parsed intent -> tags=['moody', 'indie rock', 'rainy night'] seed=None popularity=any
+
+Here are the top moody indie and alternative tracks perfectly tailored for a slow, rainy night.
+  1. K. - Cigarettes After Sex
+     why: With its slowcore, dream pop, and mellow tags, this track delivers a deeply moody atmosphere ideal for a quiet, rainy evening.
+  2. John Wayne - Cigarettes After Sex
+     why: Tagged with dream pop, post-rock, and wistful, this song brings a soft, melancholic rock vibe that fits the late-night moody theme.
+  3. SPIT IN MY FACE! - ThxSoMch
+     why: Featuring alternative rock, dark pop, and moody tags, this offers a sharper, angsty edge to a moody rock selection.
+
+  Retrieved candidates (8) [grounding source]:
+    - Jealous - Labrinth  [moody]
+    - angel wings - Madison Beer  [moody]
+    - Buried Alive - Logic  [moody]
+    - for the night - Madison Beer  [moody]
+    - Sinds 1 dag of 2 (32 jaar) - Doe Maar  [moody]
+    - K. - Cigarettes After Sex  [dream pop, Mellow, sex, moody, slowcore]
+    - SPIT IN MY FACE! - ThxSoMch  [alternative rock, dance-punk, anime, moody, dark pop]
+    - John Wayne - Cigarettes After Sex  [dream pop, Mellow, post-rock, moody, wistful]
+
+======================================================================
+GUARDRAIL DEMONSTRATION (injected hallucination)
+======================================================================
+Retrieved set: 'The Scientist', 'Fix You' (both Coldplay)
+
+Model proposed: 'The Scientist' (real) + 'Imaginary Anthem' (invented)
+
+After guardrail:
+  KEPT: The Scientist - Coldplay
+  Guardrail (attempt 1): dropped un-retrieved pick(s): Imaginary Anthem
+  Guardrail (attempt 2): dropped un-retrieved pick(s): Imaginary Anthem
+
+Result: the invented song was rejected; only grounded picks remain.
+
